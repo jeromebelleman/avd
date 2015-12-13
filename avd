@@ -1,0 +1,117 @@
+#! /usr/bin/env python
+
+import sys, os
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+import string
+import subprocess
+import time
+import shutil
+import yaml
+
+IMAGEFMT = '%s/system-images/%s/default/x86/userdata.img'
+AVDFMT = '~/.android/avd/%s.avd'
+
+def run(args, cfg):
+    entries = os.listdir(os.path.expanduser(AVDFMT % args.name))
+
+    args = [os.path.expanduser(cfg['sdk'] + '/tools/emulator')] + \
+           ['-avd', args.name, '-no-boot-anim'] + \
+           (['-noaudio'] if cfg['noaudio'] else [])
+
+    try:
+        if 'userdata-qemu.img' not in entries: # AVD hangs the first time
+            print "Booting for the first time..."
+            proc = subprocess.Popen(args + ['-no-window'])
+            if 'terminate' in cfg:
+                for i in range(cfg['terminate'], 0, -1):
+                    print "%002d\r" % i,
+                    sys.stdout.flush()
+                    time.sleep(1)
+            print "Terminating hanging AVD..."
+            proc.terminate()
+            proc.wait()
+        print "Booting..."
+        proc = subprocess.Popen(args)
+        proc.wait()
+    except KeyboardInterrupt:
+        print "Turning off AVD..."
+        proc.terminate()
+        proc.wait()
+
+def remove(args, cfg):
+    try:
+        shutil.rmtree(os.path.expanduser(AVDFMT % args.name))
+    except OSError, exc:
+        print >> sys.stderr, exc
+
+    try:
+        os.remove(os.path.expanduser('~/.android/avd/%s.ini' % args.name))
+    except OSError, exc:
+        print >> sys.stderr, exc
+
+def ls(args, cfg):
+    for entry in os.listdir(os.path.expanduser('~/.android/avd')):
+        if entry.endswith('.ini'):
+            print entry[:-4]
+
+def create(args, cfg):
+    # Make directory
+    try:
+        os.mkdir(os.path.expanduser(AVDFMT % args.name))
+    except OSError, exc:
+        print >> sys.stderr, exc
+        return
+
+    # Write top ini file
+    path = os.path.expanduser('~/.android/avd/%s.ini' % args.name)
+    shutil.copy2(os.path.expanduser('~/.avd/template.ini'), path)
+    with open(path) as fhl:
+        tpl = string.Template(fhl.read())
+    with open(path, 'w') as fhl:
+        fhl.write(tpl.substitute(path='%s/.android/avd/%s.avd' % \
+                                    (os.environ['HOME'],
+                                     args.name),
+                                 name=args.name,
+                                 target=cfg['target']))
+
+    # Write config ini file
+    path = os.path.expanduser('~/.android/avd/%s.avd/config.ini' % args.name)
+    shutil.copy2(os.path.expanduser('~/.avd/template.avd/config.ini'), path)
+    with open(path) as fhl:
+        tpl = string.Template(fhl.read())
+    with open(path, 'w') as fhl:
+        fhl.write(tpl.substitute(ram=cfg['ram'], target=cfg['target']))
+
+    # Write image
+    shutil.copy2(os.path.expanduser(IMAGEFMT % (cfg['sdk'], cfg['target'])),
+                 os.path.expanduser(AVDFMT % args.name))
+
+def main():
+    parser = ArgumentParser(description='Manage AVDs.',
+                            formatter_class=ArgumentDefaultsHelpFormatter)
+    subs = parser.add_subparsers()
+
+    createp = subs.add_parser('create')
+    createp.add_argument('name')
+    createp.set_defaults(func=create)
+
+    runp = subs.add_parser('run')
+    runp.add_argument('name')
+    runp.set_defaults(func=run)
+
+    removep = subs.add_parser('remove')
+    removep.add_argument('name')
+    removep.set_defaults(func=remove)
+
+    listp = subs.add_parser('list')
+    listp.set_defaults(func=ls)
+
+    args = parser.parse_args()
+
+    with open(os.path.expanduser('~/.avd/config.yaml')) as fhl:
+        cfg = yaml.load(fhl)
+
+    args.func(args, cfg)
+
+if __name__ == '__main__':
+    sys.exit(main())

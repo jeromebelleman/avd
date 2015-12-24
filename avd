@@ -20,16 +20,16 @@ def run(args, cfg):
 
     try:
         if 'userdata-qemu.img' not in entries: # AVD hangs the first time
-            print "Booting for the first time..."
-            proc = subprocess.Popen(args + ['-no-window'])
             if 'terminate' in cfg:
+                print "Booting for the first time..."
+                proc = subprocess.Popen(args + ['-no-window'])
                 for i in range(cfg['terminate'], 0, -1):
                     print "%002d\r" % i,
                     sys.stdout.flush()
                     time.sleep(1)
-            print "Terminating hanging AVD..."
-            proc.terminate()
-            proc.wait()
+                print "Terminating hanging AVD..."
+                proc.terminate()
+                proc.wait()
         print "Booting..."
         proc = subprocess.Popen(args)
         proc.wait()
